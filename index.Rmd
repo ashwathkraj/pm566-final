@@ -1,0 +1,459 @@
+---
+title: "Changes and Stability in Global Happiness Between 2018-2020"
+author: "Ashwath Raj"
+date: "November 18, 2021"
+output: 
+  html_document
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+```{r results = FALSE, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(readr)
+library(dtplyr)
+library(data.table)
+library(corrplot)
+library(ggpubr)
+library(rgdal)
+```
+
+#Introduction:
+  At the United Nations' event celebrating the International Day of Happiness on March 20, 2012, the first World Happiness Report was released. TED talks, conferences, fields of study, and decades of research are dedicated to the question "What makes us happy?" The report aimed to answer that question through "happiness indicators".
+  The researchers behind the report used data from the Gallup World Poll and answers to the Cantril ladder question (https://news.gallup.com/poll/122453/understanding-gallup-uses-cantril-scale.aspx), which are measurements of a respondent's imagined best (10) to worst (0) possible lives and where their lives fall on that scale. This score is broken into six factors: "economic production, social support, life expectancy, freedom, absence of corruption, and generosity".
+  
+  
+  The data was downloaded from  https://worldhappiness.report/ed/2021/#appendices-and-data under the Data Panel and Mortality Data links. The Data Panel includes various years of happiness score data. In this analysis, we will examine transitions from 2018-2020. The Mortality Data includes further country metrics, some of which we use as confounders, and death metrics, including those related to covid.
+  To download the pdf version of this document [here](https://github.com/ashwathkraj/pm566-final/index.pdf).
+
+  
+####I want to examine how scores change year over year. My questions are:
+
+##### Which indicators are responsible for the largest changes in Happiness Score between 2018 and 2019?
+
+##### How do happiness metrics effect excess deaths in 2020 per 100,000 population, relative to 2017-2019 average?
+
+  
+```{r results = "hide"}
+year1 <- fread("2018.csv")
+year2 <- fread("2019.csv")
+```
+
+#Methods:
+  I originally obtained this section of data from https://www.kaggle.com/unsdsn/world-happiness.
+  I imported the data using fread() and used summary() to search for any missing values. The only missing value was in year1's Perceptions of corruption. I replaced that NA with year2's value, which is acceptable because a change (delta) of zero from year to year will not affect my question. However, it will allow me to use the other values for that location/row. 
+  Strangely, the same problem column was a different datatype in both years (char and dbl), so I cast them as doubles. After, I was able to merge the datasets and order them by Overall rank.
+  Another category of missing values were countries that were specific subsets of scores. However, often these values were missing for both years under examination, so they were addressed in the same way.
+```{r results = "hide", warning=FALSE}
+#Add years and merge
+year1 <- year1 %>%
+  mutate(year = 2018)
+year2 <- year2 %>%
+  mutate(year = 2019)
+
+#account for NA values
+summary(year1)
+summary(year2)
+year1$"Perceptions of corruption"[20] <- year2$`Perceptions of corruption`[21]
+
+#originally for years1 and 2, one variable is sux
+options(digits=5)
+year1$`Perceptions of corruption` <- as.double(year1$`Perceptions of corruption`)
+
+years <- merge(year1, year2, all.x = TRUE, all.y = TRUE)
+years2 <- lazy_dt(years)
+```
+
+##Methods cont (EDA):
+  I examined the dimensions and base R summary statisics of the years dataset. Notably with a score of 7.632 in 2018, Finland has the number one spot for both years, and their perceived healthy life expectancy went up by ~.1 while their perceived freedom went down by ~.1. Also, Norway and Denmark swapped positions for 2nd and 3rd rank.
+  On the opposite end of the spectrum, Burundi and South Sudan have the lowest happiness score at 2.905 and 2.853 respectively. The lowest six countries report subscores all below 1 point, and the Central African Republic has scores of 0 for social support for both years. One of the few other 0's was Afghanistan for freedom to make life choices.  
+
+```{r results = "hide"}
+dim(years)
+head(years)
+tail(years)
+names(years)
+str(years)
+summary(years)
+
+summary(year1$Score)
+summary(year2$Score)
+```
+
+#Preliminary Results and EDA (more tools!):
+  The corrplot correlation matrix revealed the relationships between the subscores. Seeing these relationships are important for other questions and seeing the "status quo" of happiness indicators. That said, GDP per capita and Healthy Life expectancy were most highly correlated.
+  I also looked at the shifting distributions of the subscores through histograms. Visually, the main changes were an increase in perceived corruption  for the first quartile of countries (which means a lower score) and an increase in all countries' perceptions of Healthy life Expectancy. This is also reflected in their summary statistics.
+  In boxplots, GDP seemed to increase, but only because the scale shifted. This was due to the absence of an outlier that was present in year1 but not year2- the United Arab Emirates' GDP score dropped from 2.096 to 1.684. This might indicate a change in how much happiness GDP per capita gives the citizens.
+  Finally, the freedom subscore decreases and the perception of corruption score has the most outliers due to a majority of low values. 
+
+```{r results = "hold"}
+#Correlation Matrix
+corrplot(cor(year2[,3:9]), method = "pie")
+```
+
+## Histogram Visualizations {.tabset .tabset-pills}  
+
+###Life Ladder Score 2018 vs 2019
+```{r results = "hold"}
+par(mfrow = c(1,2))
+hist(year1$Score)
+hist(year2$Score)
+```
+
+###Healthy life expectancy 2018 vs 2019
+```{r}
+par(mfrow = c(1,2))
+hist(year1$`Healthy life expectancy`)
+hist(year2$`Healthy life expectancy`)
+```
+
+###Perceptions of corruption 2018 vs 2019
+```{r}
+par(mfrow = c(1,2))
+hist(year1$`Perceptions of corruption`)
+hist(year2$`Perceptions of corruption`)
+```
+## {-}
+
+## Boxplot Outlier Visualizations {.tabset .tabset-pills}  
+
+###GDP per capita 2018 vs 2019
+```{r}
+par(mfrow = c(1,2))
+boxplot(year1$'GDP per capita')
+boxplot(year2$'GDP per capita')
+```
+
+###Freedom to make life choices 2018 vs 2019
+```{r}
+par(mfrow = c(1,2))
+boxplot(year1$`Freedom to make life choices`)
+boxplot(year2$`Freedom to make life choices`)
+```
+
+###Perceptions of corruption 2018 vs 2019
+```{r}
+par(mfrow = c(1,2))
+boxplot(year1$`Perceptions of corruption`)
+boxplot(year2$`Perceptions of corruption`)
+```
+
+##{-}
+
+###Scatter Plots
+
+The first comparison scatter plot of healthy life expectancy doesn't show much change between years. The second scatter plot shows high dispersion within the Generosity vs Score plot. Each strata is clustered tightly within their y-value bands, but there is more variability in the x-axis.
+
+```{r warning=FALSE, message=FALSE}
+library(plotly)
+library(ggplot2)
+
+# Initial Plot, converted to combined plot below
+viz1 <- years %>%
+filter(!(year %in% NA)) %>%
+  ggplot() +
+  geom_point(mapping = aes(x = `Healthy life expectancy`, y = `Score`, color=year)) +
+  facet_wrap(~ year, nrow = 1) 
+
+viz2 <- ggplot(data=year1) +
+  geom_point(mapping=aes(x=year1$Generosity, y=year1$'Score', color=cut(year1$'Score', b = 5)))+
+  scale_color_manual(values = viridis::viridis(5)) +
+  labs(x="Generosity", y="Happiness Score") 
+
+ggplotly(viz1)
+ggplotly(viz2)
+
+```
+
+
+```{r warning=FALSE, message = FALSE}
+library(readxl)
+library(rgdal)
+df = read_excel("C:/Users/18588/Desktop/happiness-final/DataPanelWHR2021C2.xls")
+mortality = read_excel("C:/Users/18588/Desktop/happiness-final/MortalityDataWHR2021C2.xlsx")
+```
+
+```{r warning=FALSE, message = FALSE,echo=FALSE}
+df = df[which(df$year == 2019),]
+df_mortality = merge(df, mortality)
+```
+
+
+###Map Visualization Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average
+
+Obviously many countries are missing death values. This may be due to difficulty with data collection in those regions or misreporting. This map shows the magnitude of the impact of 2020 (primarily covid) per capita. The map also has hover functionality to show happiness scores.
+
+```{r warning=FALSE, message = FALSE,echo=FALSE}
+world_spdf <- readOGR(
+  dsn= paste0('C:/Users/18588/Desktop/happiness-final', "/world_shape_file"),
+  layer="TM_WORLD_BORDERS_SIMPL-0.3",
+  verbose=FALSE
+)
+
+library(dplyr)
+world_spdf@data$POP2005[ which(world_spdf@data$POP2005 == 0)] = NA
+world_spdf@data$POP2005 <- as.numeric(as.character(world_spdf@data$POP2005)) / 1000000 %>% round(2)
+
+library(leaflet)
+library(RColorBrewer)
+mybins <- c(0,10,20,50,100,Inf)
+mypalette <- colorBin( palette="YlOrBr", domain=mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`, na.color="transparent", bins=mybins)
+ 
+# Prepare the text for tooltips:
+mytext <- paste(
+    "Country: ", world_spdf@data$NAME,"<br/>", 
+    "Life Ladder: ", round(df$`Life Ladder`,3), "<br/>", 
+    "Excess Deaths: ", round(mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`,3), "<br/>",
+    sep="") %>%
+  lapply(htmltools::HTML)
+ 
+# Final Map
+leaflet(world_spdf) %>% 
+  addTiles()  %>% 
+  setView( lat=10, lng=0 , zoom=2) %>%
+  addPolygons( 
+    fillColor = ~mypalette(mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`), 
+    stroke=TRUE, 
+    fillOpacity = 0.9, 
+    color="white", 
+    weight=0.3,
+    label = mytext,
+    labelOptions = labelOptions( 
+      style = list("font-weight" = "normal", padding = "3px 8px"), 
+      textsize = "13px", 
+      direction = "auto"
+    )
+  ) %>%
+  addLegend( pal=mypalette, values=~(mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`), opacity=0.9, title = "Covid-19 Deaths per 100,000 pop", position = "bottomleft" )
+```
+
+### Map Visualization Life Ladder
+
+This map color codes by life ladder happiness scores, while hovering to provide excess death numbers. This allows the user to examine relationships between the two. 
+
+```{r warning=FALSE, message = FALSE,echo=FALSE}
+mybins <- c(0,1,2,3,4,5,6,7,8)
+mypalette <- colorBin( palette="YlOrBr", domain=df$`Life Ladder`, na.color="transparent", bins=mybins)
+ 
+# Prepare the text for tooltips:
+mytext <- paste(
+    "Country: ", world_spdf@data$NAME,"<br/>", 
+    "Life Ladder: ", round(df$`Life Ladder`,3), "<br/>", 
+    "Excess Deaths: ", round(mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`,3), "<br/>",
+    sep="") %>%
+  lapply(htmltools::HTML)
+ 
+# Final Map
+leaflet(world_spdf) %>% 
+  addTiles()  %>% 
+  setView( lat=10, lng=0 , zoom=2) %>%
+  addPolygons( 
+    fillColor = ~mypalette(df$`Life Ladder`), 
+    stroke=TRUE, 
+    fillOpacity = 0.9, 
+    color="white", 
+    weight=0.3,
+    label = mytext,
+    labelOptions = labelOptions( 
+      style = list("font-weight" = "normal", padding = "3px 8px"), 
+      textsize = "13px", 
+      direction = "auto"
+    )
+  ) %>%
+  addLegend( pal=mypalette, values=~df$`Life Ladder`, opacity=0.9, title = "Life Ladder", position = "bottomleft" )
+```
+
+### Confounder and Regression Analysis
+
+Here we see which confounders affect the relaitonship between happiness subscores and excess deaths. The findings are available in the table tab, as well as in the format of regression plots. 
+
+
+## Subscores correlated to Excess Deaths {.tabset .tabset-pills}
+
+```{r}
+metrics <- function (x_val) {
+
+require(ggplot2)
+ggplot(data = df_mortality, aes(y=df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`,x= x_val, offset=log(df_mortality$`Median age`))) +
+  geom_point() + 
+  stat_smooth(method="lm", col = "red") + 
+  stat_regline_equation()
+}
+
+metrics2 <- function (x_val) {
+  
+require(ggplot2)
+ggplot(data = df_mortality, aes(y=df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`,x= x_val, offset=log(df_mortality$`Index of institutional trust`))) +
+  geom_point() + 
+  stat_smooth(method="lm", col = "red") + 
+  stat_regline_equation()
+  # stat_pvalue_manual()
+}
+```
+
+### Life Ladder
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Life Ladder`)
+
+lm1 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Life Ladder` + offset(log(df_mortality$`Median age`)))
+lm1 %>% summary()
+
+lm1 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Life Ladder` + offset(log(df_mortality$`Index of institutional trust`)))
+lm1 %>% summary()
+```
+
+### Log GDP per capita
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Log GDP per capita`)
+
+lm2 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Log GDP per capita` + offset(log(df_mortality$`Median age`)))
+lm1 %>% summary()
+
+lm2 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Log GDP per capita` + offset(log(df_mortality$`Index of institutional trust`)))
+lm2 %>% summary()
+
+```
+
+### Social support
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Social support`)
+
+lm3 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Social support` + offset(log(df_mortality$`Median age`)))
+lm3 %>% summary()
+
+lm3 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Social support` + offset(log(df_mortality$`Index of institutional trust`)))
+lm3 %>% summary()
+```
+
+### Healthy life expectancy at birth
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Healthy life expectancy at birth`)
+lm4<-lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Healthy life expectancy at birth`)
+lm4%>% summary()
+
+lm4 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Healthy life expectancy at birth` + offset(log(df_mortality$`Median age`)))
+lm4 %>% summary()
+
+lm4 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Healthy life expectancy at birth` + offset(log(df_mortality$`Index of institutional trust`)))
+lm4 %>% summary()
+```
+
+### Freedom to make life choices
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Freedom to make life choices`)
+lm5<-lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Freedom to make life choices`)
+lm5%>% summary()
+
+lm5 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Freedom to make life choices` + offset(log(df_mortality$`Median age`)))
+lm5 %>% summary()
+
+lm5 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Freedom to make life choices` + offset(log(df_mortality$`Index of institutional trust`)))
+lm5 %>% summary()
+```
+
+### Generosity
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Generosity`)
+
+lm6 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Generosity` + offset(log(df_mortality$`Median age`)))
+lm6 %>% summary()
+
+lm6 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Generosity` + offset(log(df_mortality$`Index of institutional trust`)))
+lm6 %>% summary()
+```
+
+### Perceptions of corruption
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo = FALSE}
+metrics(df_mortality$`Perceptions of corruption`)
+# lm7<-lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Perceptions of corruption`) 
+# lm7%>% summary()
+
+lm7 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Perceptions of corruption` + offset(log(df_mortality$`Median age`)))
+lm7 %>% summary()
+
+lm7 <- lm(df_mortality$`Excess deaths in 2020 per 100,000 population, relative to 2017-2019 average`~df_mortality$`Perceptions of corruption` + offset(log(df_mortality$`Index of institutional trust`)))
+lm7 %>% summary()
+```
+
+### Table {.active}
+
+```{r, fig.dim=c(5,3), warning=FALSE, message=FALSE, echo=FALSE}
+data.frame("coefficients" = lm1$coefficients, "p-values"= summary(lm1)$coefficients[7:8])
+data.frame("coefficients" = lm2$coefficients, "p-values"= summary(lm2)$coefficients[7:8])
+data.frame("coefficients" = lm3$coefficients, "p-values"= summary(lm3)$coefficients[7:8])
+data.frame("coefficients" = lm4$coefficients, "p-values"= summary(lm4)$coefficients[7:8])
+data.frame("coefficients" = lm5$coefficients, "p-values"= summary(lm5)$coefficients[7:8])
+data.frame("coefficients" = lm6$coefficients, "p-values"= summary(lm6)$coefficients[7:8])
+data.frame("coefficients" = lm7$coefficients, "p-values"= summary(lm7)$coefficients[7:8])
+```
+## {-}
+
+#Results cont:
+  For my first question: Based on the combined scatter/line plots and factorized years, the most significant changes between years occur from increases in Healthy life expectancy and decreases in Freedom to make choices. These increases can be seen through left and right translations on the x-axis. It's likely these changes aren't as visible on the 'Score' y-axis because the changes (approximately ~.1 each) cancel out when they contribute to the overall score. 
+  These findings agree with and expand upon with the EDA histogram and boxplot findings. The addition of the scatter/line plot makes the trends more visible.
+  
+  For my second question: All subscores against excess deaths have high dispersion, including with the two confounders. In fact, a linear relationship is likely not an accurate relationship for these variables. Also, the confounders have marginal effects on subscore significance. Most important, there are no subscores such that the confounders of median age and index of institutional trust cause a crossing of the p=.05 threshold. Therefore, we establish these confounders do not have a notable influence on the subscore to death relationship. 
+
+## Scatterplot Comparisons {.tabset .tabset-pills}  
+
+These plots show more visually salient overlays of how scores shift year over year. The regression lines indicate strata trends The changes for the plots particularly pronounced in healthy life expectancy and freedom to make life choices.  
+
+```{r results = "hold", echo = FALSE}
+scatter_score <- function(col,title){
+ggplot(data = years, mapping = aes(x = col, y = `Score`, linetype=factor(year), color = factor(year))) +
+  geom_point() +
+  geom_smooth(se = FALSE) + 
+  ggtitle(title)+
+  labs(x = title)
+}
+
+```
+
+###GDP per capita 2018 vs 2019
+```{r}
+scatter_score(years$`GDP per capita`, "GDP per capita")
+```
+
+###Social support 2018 vs 2019
+```{r}
+scatter_score(years$`Social support`, "Social support")
+```
+
+###Healthy life expectancy 2018 vs 2019
+```{r}
+scatter_score(years$`Healthy life expectancy`, "Healthy life expectancy")
+```
+
+###Freedom to make life choices vs 2019
+```{r}
+scatter_score(years$`Freedom to make life choices`, "Freedom to make life choices")
+```
+
+###Generosity 2018 vs 2019
+```{r}
+scatter_score(years$Generosity, "years$Generosity")
+scatter_score(years$`Perceptions of corruption`, "Perceptions of corruption")
+```
+
+##{-}
+
+  
+
+#Conclusion:
+  Of course, many complex factors contribute to national and individual happiness levels. They range from political and economic stability to social status and more. The Happiness Report provide provides a key benchmark for our understanding of happiness around the world.  
+  Over 2018 to 2019, there was not much change in happiness levels or their subscores. Most change was on the order of magnitude of 10^-1 for subscores. As stated before, the key changes were increase in Healthy life expectancy and decreases in Freedom scores. These findings and any other changes in happiness level, beg the question of why. What social, local, or global effects cause happiness levels to change or stay the same? 
+ 
+ Over 2019 to 2020, excess deaths are used in this report as a surrogate for several items. One is reflective of populations' obedience to federal safety guidelines around Covid-19. We don't unfortunately account for all epidemiological elements of disease spread in measuring confounders. Specifically, we focus on country population median age to measure the role of disease susceptability in populations and an index of institutional trust as one component of likelihood of obedience to safety guidelines. Overall, we found the confounders did not impact the relationship of happiness subscores on excess deaths. We found that generosity (p=.002) and perceptions of corruption were most significant (p=.005). Least significant was freedom to make life choices, while all others are significant. Therefore, we ascertain that happiness on the life ladder and happiness subscores have an effect on excess deaths in 2020. They, in fact, have a protective effect against excess deaths: a happier, wealthier, more supported, healthier, more generous, less corrupt society keeps more citizens alive year over year.
